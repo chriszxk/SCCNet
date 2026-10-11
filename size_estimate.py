@@ -1,15 +1,12 @@
-from pathlib import Path
 import csv
+from pathlib import Path
 
 import cv2
 import numpy as np
+
 from ultralytics import YOLO
 
-
-model = YOLO(
-    "/mnt/DATA/quabot/work/github/HSCD/model-weight/"
-    "SCCNet/train/weights/best.pt"
-)
+model = YOLO("/mnt/DATA/quabot/work/github/HSCD/model-weight/SCCNet/train/weights/best.pt")
 
 source = "/mnt/DATA/quabot/work/HRSC/images/val"
 output_dir = Path("./runs/segment/blue_green_width")
@@ -29,7 +26,7 @@ width_color = (0, 255, 255)  # 宽度线：黄色
 
 
 def measure_width(contour):
-    """以最大连通轮廓的最小外接旋转矩形短边作为宽度，单位 px。"""
+    """以最大连通轮廓的最小外接旋转矩形短边作为宽度，单位 px。."""
     if len(contour) < 3:
         return None
 
@@ -72,7 +69,7 @@ def draw_width_label(
     text_thickness,
     padding,
 ):
-    """优先在马蹄蟹右侧标注宽度，空间不足时改到左侧或上下方。"""
+    """优先在马蹄蟹右侧标注宽度，空间不足时改到左侧或上下方。."""
     height, width = image.shape[:2]
     x, y, box_width, box_height = cv2.boundingRect(contour)
 
@@ -91,10 +88,7 @@ def draw_width_label(
         label_width = text_width + 2 * padding
         label_height = text_height + baseline + 2 * padding
 
-        if (
-            label_width <= width
-            and label_height <= height
-        ) or label_scale <= 0.1:
+        if (label_width <= width and label_height <= height) or label_scale <= 0.1:
             break
 
         label_scale *= 0.9
@@ -112,12 +106,7 @@ def draw_width_label(
 
     position = None
     for left, top in candidates:
-        if (
-            left >= 0
-            and top >= 0
-            and left + label_width <= width
-            and top + label_height <= height
-        ):
+        if left >= 0 and top >= 0 and left + label_width <= width and top + label_height <= height:
             position = (left, top)
             break
 
@@ -170,14 +159,16 @@ csv_path = output_dir / "horseshoe_crab_widths.csv"
 
 with csv_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
     writer = csv.writer(csv_file)
-    writer.writerow([
-        "image",
-        "crab_id",
-        "width_px",
-        "length_px",
-        "image_width_px",
-        "image_height_px",
-    ])
+    writer.writerow(
+        [
+            "image",
+            "crab_id",
+            "width_px",
+            "length_px",
+            "image_width_px",
+            "image_height_px",
+        ]
+    )
 
     for result in results:
         image = result.orig_img.copy()
@@ -215,8 +206,7 @@ with csv_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
                 # 半透明分割掩膜。
                 foreground = binary_mask.astype(bool)
                 image[foreground] = (
-                    image[foreground].astype(np.float32) * (1 - alpha)
-                    + np.asarray(color, dtype=np.float32) * alpha
+                    image[foreground].astype(np.float32) * (1 - alpha) + np.asarray(color, dtype=np.float32) * alpha
                 ).astype(np.uint8)
 
                 contours, _ = cv2.findContours(
@@ -236,34 +226,30 @@ with csv_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
                     crab_count += 1
                     measurement = measure_width(largest)
 
-                    writer.writerow([
-                        Path(result.path).name,
-                        crab_count,
-                        (
-                            f"{measurement['width_px']:.2f}"
-                            if measurement is not None else ""
-                        ),
-                        (
-                            f"{measurement['length_px']:.2f}"
-                            if measurement is not None else ""
-                        ),
-                        width,
-                        height,
-                    ])
+                    writer.writerow(
+                        [
+                            Path(result.path).name,
+                            crab_count,
+                            (f"{measurement['width_px']:.2f}" if measurement is not None else ""),
+                            (f"{measurement['length_px']:.2f}" if measurement is not None else ""),
+                            width,
+                            height,
+                        ]
+                    )
 
                     if measurement is not None:
                         print(
-                            f"{Path(result.path).name} | "
-                            f"马蹄蟹 {crab_count} | "
-                            f"宽度：{measurement['width_px']:.1f} px"
+                            f"{Path(result.path).name} | 马蹄蟹 {crab_count} | 宽度：{measurement['width_px']:.1f} px"
                         )
 
-                annotations.append({
-                    "contours": contours,
-                    "largest": largest,
-                    "color": color,
-                    "measurement": measurement,
-                })
+                annotations.append(
+                    {
+                        "contours": contours,
+                        "largest": largest,
+                        "color": color,
+                        "measurement": measurement,
+                    }
+                )
 
         # 先绘制所有轮廓，避免后续掩膜覆盖。
         for item in annotations:
