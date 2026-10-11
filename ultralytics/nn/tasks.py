@@ -12,24 +12,15 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from ultralytics.nn.modules.add_module import *
-from ultralytics.nn.modules.block import OpticalConvBlock, SCB
-
 from ultralytics.nn.autobackend import check_class_names
-from ultralytics.nn.modules.block import OMHT, OpticalConvBlockDown, D3C2f
 from ultralytics.nn.modules import (
-    OpticalDownBlock,
-    EFC,
-CoordAtt,
-DySnakeConv,
-Edge, EdgeDown,
-SimStem,
     AIFI,
     C1,
     C2,
     C2PSA,
     C3,
     C3TR,
+    EFC,
     ELAN1,
     OBB,
     OBB26,
@@ -37,7 +28,7 @@ SimStem,
     SPP,
     SPPELAN,
     SPPF,
-    A2C2f,GRA2C2f,
+    A2C2f,
     AConv,
     ADown,
     Bottleneck,
@@ -56,18 +47,24 @@ SimStem,
     Conv,
     Conv2,
     ConvTranspose,
+    CoordAtt,
     Depth,
     Detect,
     DWConv,
     DWConvTranspose2d,
+    DySnakeConv,
+    Edge,
+    EdgeDown,
     Focus,
     GhostBottleneck,
     GhostConv,
+    GRA2C2f,
     HGBlock,
     HGStem,
     ImagePoolingAttn,
     Index,
     LRPCHead,
+    OpticalDownBlock,
     Pose,
     Pose26,
     RepC3,
@@ -80,6 +77,7 @@ SimStem,
     Segment,
     Segment26,
     SemanticSegment,
+    SimStem,
     TorchVision,
     WorldDetect,
     YOLOEDetect,
@@ -87,6 +85,8 @@ SimStem,
     YOLOESegment26,
     v10Detect,
 )
+from ultralytics.nn.modules.add_module import *
+from ultralytics.nn.modules.block import OMHT, SCB, D3C2f, OpticalConvBlock, OpticalConvBlockDown
 from ultralytics.utils import (
     DEFAULT_CFG_DICT,
     LOGGER,
@@ -2001,7 +2001,11 @@ def parse_model(d, ch, verbose=True):
         {
             Classify,
             DySnakeConv,
-            Conv, Edge, EdgeDown, DySnakeConv, AKConv, 
+            Conv,
+            Edge,
+            EdgeDown,
+            DySnakeConv,
+            AKConv,
             ConvTranspose,
             GhostConv,
             Bottleneck,
@@ -2016,11 +2020,16 @@ def parse_model(d, ch, verbose=True):
             C1,
             C2,
             C2f,
-            C3k2,SimStem, CoordAtt, OMHT,
+            C3k2,
+            SimStem,
+            CoordAtt,
+            OMHT,
             RepNCSPELAN4,
             ELAN1,
-            ADown,  OpticalConvBlockDown,
-            AConv,WaveDown,
+            ADown,
+            OpticalConvBlockDown,
+            AConv,
+            WaveDown,
             SPPELAN,
             C2fAttn,
             C3,
@@ -2033,7 +2042,10 @@ def parse_model(d, ch, verbose=True):
             PSA,
             SCDown,
             C2fCIB,
-            A2C2f, GRA2C2f, D3C2f,SCB,
+            A2C2f,
+            GRA2C2f,
+            D3C2f,
+            SCB,
         }
     )
     repeat_modules = frozenset(  # modules with 'repeat' arguments
@@ -2042,7 +2054,9 @@ def parse_model(d, ch, verbose=True):
             C1,
             C2,
             C2f,
-            C3k2, SimStem, OMHT,
+            C3k2,
+            SimStem,
+            OMHT,
             C2fAttn,
             C3,
             C3TR,
@@ -2052,7 +2066,10 @@ def parse_model(d, ch, verbose=True):
             C2fPSA,
             C2fCIB,
             C2PSA,
-            A2C2f,GRA2C2f, D3C2f,SCB,
+            A2C2f,
+            GRA2C2f,
+            D3C2f,
+            SCB,
         }
     )
     for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args
@@ -2157,7 +2174,6 @@ def parse_model(d, ch, verbose=True):
         elif m is CBFuse:
             c2 = ch[f[-1]]
         elif m is EFC:
-
             # two input features
             c1 = ch[f[0]]
             c2_in = ch[f[1]]
