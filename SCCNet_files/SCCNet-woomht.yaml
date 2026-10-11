@@ -1,0 +1,51 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# YOLO12-seg instance segmentation model with P3/8 - P5/32 outputs
+# Model docs: https://docs.ultralytics.com/models/yolo12
+# Task docs: https://docs.ultralytics.com/tasks/segment
+
+# Parameters
+nc: 80 # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolo12n-seg.yaml' will call yolo12-seg.yaml with scale 'n'
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024] # summary: 294 layers, 2,855,056 parameters, 2,855,040 gradients, 10.6 GFLOPs
+  s: [0.50, 0.50, 1024] # summary: 294 layers, 9,938,592 parameters, 9,938,576 gradients, 35.7 GFLOPs
+  m: [0.50, 1.00, 512] # summary: 314 layers, 22,505,376 parameters, 22,505,360 gradients, 123.5 GFLOPs
+  l: [1.00, 1.00, 512] # summary: 510 layers, 28,756,992 parameters, 28,756,976 gradients, 145.1 GFLOPs
+  x: [1.00, 1.50, 512] # summary: 510 layers, 64,387,264 parameters, 64,387,248 gradients, 324.6 GFLOPs
+
+# YOLO12n backbone
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, WaveDown, [ 128, "haar" ]] # 1-P2/4
+  - [-1, 1, WaveDown, [ 256, "haar" ]] # 2-P3/8
+  - [-1, 1, WaveDown, [ 512, "haar" ]] # 3-P4/16
+  - [-1, 2, SCB, [512, True, 1]]
+  - [-1, 1, WaveDown, [ 512, "haar" ]] # 5-P5/32
+  - [-1, 2, SCB, [512, True, 1]] # 6
+
+# YOLO12n head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]] # cat backbone P4 8 
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 2], 1, Concat, [1]] # cat backbone P3 10
+
+  - [ -1, 1, nn.Upsample, [ None, 2, "nearest" ] ]
+  - [ [ -1, 1 ], 1, Concat, [ 1 ] ] # cat backbone P3 SCCNet_files
+
+
+  - [-1, 1, WaveDown, [ 256, "haar" ]]
+  - [[-1, 10], 1, Concat, [1]] # cat head P4 14
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]] # cat head P4
+  - [-1, 2, SCB, [512, True, 1]] # 17
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 6], 1, Concat, [1]] # cat head P5
+  - [-1, 2, SCB, [1024, True, 1]] # 20 (P5/32-large)
+
+  - [[14, 17, 20], 1, Segment, [nc, 32, 256]] # Segment(P3, P4, P5)
