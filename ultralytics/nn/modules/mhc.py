@@ -1,11 +1,14 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from __future__ import annotations
+
 import math
+
+import torch
+import torch.nn.functional as F
+from torch import nn
 
 
 class RMSNorm(nn.Module):
-    """Root Mean Square Normalization"""
+    """Root Mean Square Normalization."""
 
     def __init__(self, dim, eps=1e-6):
         super().__init__()
@@ -18,7 +21,7 @@ class RMSNorm(nn.Module):
         if len(original_shape) > 2:
             x = x.reshape(-1, original_shape[-1])
 
-        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
+        rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps)
         x = x / rms * self.weight
 
         if len(original_shape) > 2:
@@ -27,7 +30,7 @@ class RMSNorm(nn.Module):
 
 
 class StableSinkhornKnopp(nn.Module):
-    """稳定的Sinkhorn-Knopp算法"""
+    """稳定的Sinkhorn-Knopp算法."""
 
     def __init__(self, num_iterations=20, epsilon=1e-8):
         super().__init__()
@@ -38,8 +41,9 @@ class StableSinkhornKnopp(nn.Module):
         """
         Args:
             M: 形状为 (..., n, n) 的矩阵
+
         Returns:
-            双随机矩阵，形状与M相同
+            双随机矩阵，形状与M相同.
         """
         # 确保正数
         X = torch.exp(M)
@@ -58,18 +62,16 @@ class StableSinkhornKnopp(nn.Module):
 
 
 class ManifoldConstrainedHC(nn.Module):
-    """
-    流形约束超连接 (mHC) 模块
-    严格按照论文公式实现
+    """流形约束超连接 (mHC) 模块 严格按照论文公式实现.
     """
 
     def __init__(
-            self,
-            hidden_dim: int,
-            expansion_factor: int = 4,
-            use_dynamic_mapping: bool = True,
-            use_static_mapping: bool = True,
-            sinkhorn_iterations: int = 20
+        self,
+        hidden_dim: int,
+        expansion_factor: int = 4,
+        use_dynamic_mapping: bool = True,
+        use_static_mapping: bool = True,
+        sinkhorn_iterations: int = 20,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -107,15 +109,14 @@ class ManifoldConstrainedHC(nn.Module):
         self._init_parameters()
 
     def _init_parameters(self):
-        """初始化参数"""
+        """初始化参数."""
         if self.use_dynamic:
             nn.init.normal_(self.phi_pre.weight, mean=0.0, std=0.01)
             nn.init.normal_(self.phi_post.weight, mean=0.0, std=0.01)
             nn.init.normal_(self.phi_res.weight, mean=0.0, std=0.01)
 
     def compute_mappings(self, x: torch.Tensor):
-        """
-        计算H_pre, H_post, H_res映射
+        """计算H_pre, H_post, H_res映射.
 
         Args:
             x: 输入张量，形状为 (..., n, C)
@@ -174,8 +175,7 @@ class ManifoldConstrainedHC(nn.Module):
         return H_pre, H_post, H_res
 
     def forward(self, x: torch.Tensor, layer_fn: callable) -> torch.Tensor:
-        """
-        mHC前向传播
+        """mHC前向传播.
 
         Args:
             x: 输入张量，形状 (..., n, C)
@@ -189,16 +189,16 @@ class ManifoldConstrainedHC(nn.Module):
 
         # 计算层函数F的输入：H_pre * x
         # 使用einsum进行批量矩阵乘法
-        x_weighted = torch.einsum('...n,...nc->...c', H_pre, x)
+        x_weighted = torch.einsum("...n,...nc->...c", H_pre, x)
 
         # 应用层函数F
         f_output = layer_fn(x_weighted)  # [..., C]
 
         # 计算残差部分：H_res * x
-        residual = torch.einsum('...nm,...mc->...nc', H_res, x)  # [..., n, C]
+        residual = torch.einsum("...nm,...mc->...nc", H_res, x)  # [..., n, C]
 
         # 计算post部分：H_post^T * f_output
-        post = torch.einsum('...n,...c->...nc', H_post, f_output)  # [..., n, C]
+        post = torch.einsum("...n,...c->...nc", H_post, f_output)  # [..., n, C]
 
         # 最终输出
         output = residual + post
@@ -207,7 +207,7 @@ class ManifoldConstrainedHC(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    """标准的多头注意力机制"""
+    """标准的多头注意力机制."""
 
     def __init__(self, hidden_dim, num_heads, dropout=0.1):
         super().__init__()
@@ -256,7 +256,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class FeedForwardNetwork(nn.Module):
-    """前馈神经网络"""
+    """前馈神经网络."""
 
     def __init__(self, hidden_dim, ffn_dim=None, dropout=0.1):
         super().__init__()
@@ -276,20 +276,18 @@ class FeedForwardNetwork(nn.Module):
 
 
 class MHCTransformerBlock(nn.Module):
-    """
-    集成mHC的Transformer块
-    严格按照论文架构设计
+    """集成mHC的Transformer块 严格按照论文架构设计.
     """
 
     def __init__(
-            self,
-            hidden_dim: int,
-            num_heads: int,
-            expansion_factor: int = 4,
-            ffn_dim: int = None,
-            dropout: float = 0.1,
-            use_mhc_for_attn: bool = True,
-            use_mhc_for_ffn: bool = True
+        self,
+        hidden_dim: int,
+        num_heads: int,
+        expansion_factor: int = 4,
+        ffn_dim: int | None = None,
+        dropout: float = 0.1,
+        use_mhc_for_attn: bool = True,
+        use_mhc_for_ffn: bool = True,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -302,16 +300,13 @@ class MHCTransformerBlock(nn.Module):
 
         if use_mhc_for_attn:
             # mHC用于注意力层
-            self.mhc_attn = ManifoldConstrainedHC(
-                hidden_dim=hidden_dim,
-                expansion_factor=expansion_factor
-            )
+            self.mhc_attn = ManifoldConstrainedHC(hidden_dim=hidden_dim, expansion_factor=expansion_factor)
 
             # 定义注意力层函数（处理C维度）
             self.attn_layer = MultiHeadAttention(
                 hidden_dim=self.C,  # 注意：这里是C维度
                 num_heads=max(1, num_heads // expansion_factor),
-                dropout=dropout
+                dropout=dropout,
             )
         else:
             # 标准残差连接 + 注意力
@@ -320,16 +315,11 @@ class MHCTransformerBlock(nn.Module):
 
         if use_mhc_for_ffn:
             # mHC用于FFN层
-            self.mhc_ffn = ManifoldConstrainedHC(
-                hidden_dim=hidden_dim,
-                expansion_factor=expansion_factor
-            )
+            self.mhc_ffn = ManifoldConstrainedHC(hidden_dim=hidden_dim, expansion_factor=expansion_factor)
 
             # 定义FFN层函数（处理C维度）
             self.ffn_layer = FeedForwardNetwork(
-                hidden_dim=self.C,
-                ffn_dim=ffn_dim // expansion_factor if ffn_dim else None,
-                dropout=dropout
+                hidden_dim=self.C, ffn_dim=ffn_dim // expansion_factor if ffn_dim else None, dropout=dropout
             )
         else:
             # 标准残差连接 + FFN
@@ -344,8 +334,7 @@ class MHCTransformerBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, attention_mask=None) -> torch.Tensor:
-        """
-        Transformer块前向传播
+        """Transformer块前向传播.
 
         Args:
             x: 输入张量，形状 (batch_size, seq_len, hidden_dim)
@@ -429,10 +418,9 @@ class MHCTransformerBlock(nn.Module):
         return x
 
 
-
 # 测试函数
 def test_mhc_transformer():
-    """测试mHC Transformer模块"""
+    """测试mHC Transformer模块."""
     batch_size = 2
     seq_len = 16000
     hidden_dim = 512
@@ -445,16 +433,13 @@ def test_mhc_transformer():
 
     # 1. 测试mHC模块
     print("\n1. 测试mHC模块:")
-    mhc = ManifoldConstrainedHC(
-        hidden_dim=hidden_dim,
-        expansion_factor=expansion_factor
-    )
+    mhc = ManifoldConstrainedHC(hidden_dim=hidden_dim, expansion_factor=expansion_factor)
 
     # 创建模拟的层函数
     layer_fn = nn.Sequential(
         nn.Linear(hidden_dim // expansion_factor, hidden_dim // expansion_factor * 4),
         nn.GELU(),
-        nn.Linear(hidden_dim // expansion_factor * 4, hidden_dim // expansion_factor)
+        nn.Linear(hidden_dim // expansion_factor * 4, hidden_dim // expansion_factor),
     )
 
     # 创建输入
@@ -468,18 +453,16 @@ def test_mhc_transformer():
     print(f"  mHC参数数量: {sum(p.numel() for p in mhc.parameters()):,}")
 
     # 测试双随机约束
-    H_pre, H_post, H_res = mhc.compute_mappings(x[:1])  # 只测试一个样本
+    _H_pre, _H_post, H_res = mhc.compute_mappings(x[:1])  # 只测试一个样本
 
-    print(f"\n  双随机性检查:")
+    print("\n  双随机性检查:")
     print(f"  行和范围: [{H_res.sum(dim=-1).min():.4f}, {H_res.sum(dim=-1).max():.4f}]")
     print(f"  列和范围: [{H_res.sum(dim=-2).min():.4f}, {H_res.sum(dim=-2).max():.4f}]")
 
     # 2. 测试mHC Transformer块
     print("\n2. 测试mHC Transformer块:")
     transformer_block = MHCTransformerBlock(
-        hidden_dim=hidden_dim,
-        num_heads=num_heads,
-        expansion_factor=expansion_factor
+        hidden_dim=hidden_dim, num_heads=num_heads, expansion_factor=expansion_factor
     )
 
     x_transformer = torch.randn(batch_size, seq_len, hidden_dim)
@@ -494,4 +477,3 @@ if __name__ == "__main__":
     # 运行测试
     test_mhc_transformer()
     print("\n\n")
-
