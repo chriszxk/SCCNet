@@ -13,39 +13,39 @@ scales:
 
 backbone:
   # [from, repeats, module, args]
-  - [-1, 1, Conv, [64, 3, 2]]            # 0-P1/2
-  - [-1, 1, Conv, [128, 3, 2]]           # 1-P2/4
-  - [-1, 2, OMHT, [256, False, 0.75]]    # 2
-  - [-1, 1, Conv, [256, 3, 2]]           # 3-P3/8
-  - [-1, 2, OMHT, [512, False, 0.75]]    # 4
-  - [-1, 1, Conv, [512, 3, 2]]           # 5-P4/16
-  - [-1, 2, SCB, [512, True, 1]]         # 6
-  - [-1, 1, Conv, [512, 3, 2]]          # 7-P5/32
-  - [-1, 2, SCB, [512, True, 1]]         # 8
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 2, OMHT, [256, False, 0.75]] # 2
+  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+  - [-1, 2, OMHT, [512, False, 0.75]] # 4
+  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+  - [-1, 2, SCB, [512, True, 1]] # 6
+  - [-1, 1, Conv, [512, 3, 2]] # 7-P5/32
+  - [-1, 2, SCB, [512, True, 1]] # 8
 
 head:
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 9
-  - [[-1, 6], 1, Concat, [1]]                 # 10: backbone P4
-  - [-1, 2, OMHT, [512, False, 1]]            # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 9
+  - [[-1, 6], 1, Concat, [1]] # 10: backbone P4
+  - [-1, 2, OMHT, [512, False, 1]] # 11
 
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # SCCNet_files
-  - [[-1, 4], 1, Concat, [1]]                 # 13: backbone P3
-  - [-1, 2, OMHT, [256, False, 1]]            # 14
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # SCCNet_files
+  - [[-1, 4], 1, Concat, [1]] # 13: backbone P3
+  - [-1, 2, OMHT, [256, False, 1]] # 14
 
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 15
-  - [[-1, 2], 1, Concat, [1]]                 # 16: backbone P2
-  - [-1, 2, OMHT, [256, False, 1]]            # 17
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 15
+  - [[-1, 2], 1, Concat, [1]] # 16: backbone P2
+  - [-1, 2, OMHT, [256, False, 1]] # 17
 
-  - [-1, 1, Conv, [256, 3, 2]]                # 18: P2 -> P3
-  - [[-1, 14], 1, Concat, [1]]                # 19: head P3
-  - [-1, 2, OMHT, [256, False, 1]]            # 20: P3/8
+  - [-1, 1, Conv, [256, 3, 2]] # 18: P2 -> P3
+  - [[-1, 14], 1, Concat, [1]] # 19: head P3
+  - [-1, 2, OMHT, [256, False, 1]] # 20: P3/8
 
-  - [-1, 1, Conv, [256, 3, 2]]                # 21: P3 -> P4
-  - [[-1, 11], 1, Concat, [1]]                # 22: head P4
-  - [-1, 2, SCB, [512, True, 1]]              # 23: P4/16
+  - [-1, 1, Conv, [256, 3, 2]] # 21: P3 -> P4
+  - [[-1, 11], 1, Concat, [1]] # 22: head P4
+  - [-1, 2, SCB, [512, True, 1]] # 23: P4/16
 
-  - [-1, 1, Conv, [512, 3, 2]]                # 24: P4 -> P5
-  - [[-1, 8], 1, Concat, [1]]                 # 25: backbone P5
-  - [-1, 2, SCB, [1024, True, 1]]             # 26: P5/32
+  - [-1, 1, Conv, [512, 3, 2]] # 24: P4 -> P5
+  - [[-1, 8], 1, Concat, [1]] # 25: backbone P5
+  - [-1, 2, SCB, [1024, True, 1]] # 26: P5/32
 
-  - [[20, 23, 26], 1, Segment, [nc, 32, 256]]  # 27
+  - [[20, 23, 26], 1, Segment, [nc, 32, 256]] # 27
