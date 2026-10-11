@@ -983,7 +983,9 @@ def profile_ops(input, ops, n=10, device=None, max_num_obj=0):
                         mem += cuda_info["memory"] / 1e9  # (GB)
                 s_in, s_out = (tuple(x.shape) if isinstance(x, torch.Tensor) else "list" for x in (x, y))  # shapes
                 p = sum(x.numel() for x in m.parameters()) if isinstance(m, nn.Module) else 0  # parameters
-                LOGGER.info(f"{p:SCCNet_files}{flops:SCCNet_files.4g}{mem:>14.3f}{tf:14.4g}{tb:14.4g}{s_in!s:>24s}{s_out!s:>24s}")
+                LOGGER.info(
+                    f"{p:SCCNet_files}{flops:SCCNet_files.4g}{mem:>14.3f}{tf:14.4g}{tb:14.4g}{s_in!s:>24s}{s_out!s:>24s}"
+                )
                 results.append([p, flops, mem, tf, tb, s_in, s_out])
             except Exception as e:
                 LOGGER.info(e)
