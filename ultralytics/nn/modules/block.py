@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import math
-import  numpy as np
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -13,11 +13,10 @@ from torch import nn
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad
-from .transformer import TransformerBlock
 from .mhc import MHCTransformerBlock
+from .transformer import TransformerBlock
 
 __all__ = (
-    "Edge", "EdgeDown","CoordAtt", "GRA2C2f", "EFC", "OpticalDownBlock",
     "C1",
     "C2",
     "C2PSA",
@@ -25,6 +24,7 @@ __all__ = (
     "C3TR",
     "CIB",
     "DFL",
+    "EFC",
     "ELAN1",
     "PSA",
     "SPP",
@@ -46,19 +46,26 @@ __all__ = (
     "CBFuse",
     "CBLinear",
     "ContrastiveHead",
+    "CoordAtt",
+    "Edge",
+    "EdgeDown",
+    "GRA2C2f",
     "GhostBottleneck",
     "HGBlock",
     "HGStem",
     "ImagePoolingAttn",
+    "OpticalDownBlock",
     "Proto",
     "RepC3",
     "RepNCSPELAN4",
     "RepVGGDW",
     "ResNetLayer",
     "SCDown",
-    "TorchVision",
     "SimStem",
+    "TorchVision",
 )
+
+
 class EFC(nn.Module):  # efc0
     def __init__(self, c1, c2_in, c2):
         super().__init__()
@@ -74,6 +81,7 @@ class EFC(nn.Module):  # efc0
 
 class DSConv(nn.Module):
     """Pointwise convolution followed by depthwise convolution."""
+
     def __init__(self, c1, c2, k=3, s=1, d=1, act=True):
         super().__init__()
         self.pw = Conv(c1, c2, k=1, s=1, act=act)
@@ -85,6 +93,7 @@ class DSConv(nn.Module):
 
 class D3Block(nn.Module):
     """DSConv3 → DWConv7 → DSConv3 → optional residual."""
+
     def __init__(self, c1, c2, shortcut=True, e=0.5):
         super().__init__()
         c_ = max(int(c2 * e), 1)
@@ -100,14 +109,13 @@ class D3Block(nn.Module):
 
 class D3C2f(nn.Module):
     """D3-based C2f module."""
+
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, d3_e=0.5):
         super().__init__()
         self.c = int(c2 * e)
         self.cv1 = Conv(c1, 2 * self.c, k=1, s=1)
         self.cv2 = Conv((2 + n) * self.c, c2, k=1, s=1)
-        self.m = nn.ModuleList(
-            D3Block(self.c, self.c, shortcut=shortcut, e=d3_e) for _ in range(n)
-        )
+        self.m = nn.ModuleList(D3Block(self.c, self.c, shortcut=shortcut, e=d3_e) for _ in range(n))
 
     def forward(self, x):
         y = list(self.cv1(x).chunk(2, dim=1))
@@ -121,45 +129,45 @@ class D3C2f(nn.Module):
             y.append(block(y[-1]))
         return self.cv2(torch.cat(y, dim=1))
 
+
 class DiffractiveLayer(nn.Module):
-    def __init__(self,distance=0.03,wavelength=532e-9):
+    def __init__(self, distance=0.03, wavelength=532e-9):
         super().__init__()
-        self.distance=distance
-        self.wavelength=wavelength
+        self.distance = distance
+        self.wavelength = wavelength
 
-    def forward(self,x):
-        H,W=x.shape[-2:]
-        fx=torch.fft.fftfreq(W,device=x.device)
-        fy=torch.fft.fftfreq(H,device=x.device)
-        FX,FY=torch.meshgrid(fx,fy,indexing="xy")
+    def forward(self, x):
+        H, W = x.shape[-2:]
+        fx = torch.fft.fftfreq(W, device=x.device)
+        fy = torch.fft.fftfreq(H, device=x.device)
+        FX, FY = torch.meshgrid(fx, fy, indexing="xy")
 
-        h=torch.exp(
-            1j*2*np.pi/self.wavelength*self.distance
-            -1j*np.pi*self.wavelength*self.distance*(FX**2+FY**2)
+        h = torch.exp(
+            1j * 2 * np.pi / self.wavelength * self.distance
+            - 1j * np.pi * self.wavelength * self.distance * (FX**2 + FY**2)
         )
 
-        h=torch.fft.fftshift(h)
+        h = torch.fft.fftshift(h)
 
-        return torch.fft.ifft2(
-            torch.fft.fft2(x)*h
-        )
+        return torch.fft.ifft2(torch.fft.fft2(x) * h)
 
 
 class OpticalBlock(nn.Module):
-    def __init__(self,c):
+    def __init__(self, c):
         super().__init__()
-        self.phase=nn.Parameter(torch.rand(1,c,1,1)*2*np.pi)
-        self.diff=DiffractiveLayer()
-        self.proj=Conv(c,c,1,1)
+        self.phase = nn.Parameter(torch.rand(1, c, 1, 1) * 2 * np.pi)
+        self.diff = DiffractiveLayer()
+        self.proj = Conv(c, c, 1, 1)
 
-    def forward(self,x):
-        dtype=x.dtype
+    def forward(self, x):
+        dtype = x.dtype
         with torch.cuda.amp.autocast(False):
-            x=x.float()
-            x=torch.complex(x,torch.zeros_like(x))
-            x=self.diff(x)*torch.exp(1j*self.phase.float())
-            x=torch.abs(x)
+            x = x.float()
+            x = torch.complex(x, torch.zeros_like(x))
+            x = self.diff(x) * torch.exp(1j * self.phase.float())
+            x = torch.abs(x)
         return self.proj(x.to(dtype))
+
 
 # class OpticalConvBlock(nn.Module): # dialation conv
 #     def __init__(self, c, ratio=0.5):
@@ -198,27 +206,31 @@ class OpticalBlock(nn.Module):
 #         y = self.fuse(torch.cat((self.a * fc, self.b * fo), 1))
 #         return y + torch.sigmoid(self.alpha) * x
 
-class OpticalConvBlock(nn.Module):# 2,143,072 parameters
-    def __init__(self,c,ratio=0.5):
+
+class OpticalConvBlock(nn.Module):  # 2,143,072 parameters
+    def __init__(self, c, ratio=0.5):
         super().__init__()
-        self.c1=int(c*ratio); self.c2=c-self.c1
+        self.c1 = int(c * ratio)
+        self.c2 = c - self.c1
 
-        self.conv_d=OpticalBlock(self.c1)
-        self.norm=nn.BatchNorm2d(self.c1)
-        self.align=Conv(self.c1,self.c2,1,1)
-        self.conv_h=Conv(self.c2,self.c2,(1,5),1)
-        self.conv_v=Conv(self.c2,self.c2,(5,1),1)
-        self.conv_f2=Conv(self.c2,self.c2,3,1)
-        self.fuse=Conv(c,c,1,1)
-        self.spa=SPA()
-        self.alpha=nn.Parameter(torch.tensor(0.0))
+        self.conv_d = OpticalBlock(self.c1)
+        self.norm = nn.BatchNorm2d(self.c1)
+        self.align = Conv(self.c1, self.c2, 1, 1)
+        self.conv_h = Conv(self.c2, self.c2, (1, 5), 1)
+        self.conv_v = Conv(self.c2, self.c2, (5, 1), 1)
+        self.conv_f2 = Conv(self.c2, self.c2, 3, 1)
+        self.fuse = Conv(c, c, 1, 1)
+        self.spa = SPA()
+        self.alpha = nn.Parameter(torch.tensor(0.0))
 
-    def forward(self,x):
-        x1,x2=torch.split(x,[self.c1,self.c2],1)
-        f1=self.norm(self.conv_d(x1))
-        f1a=self.spa(self.align(f1))
-        f2=self.conv_f2(self.conv_h(x2+f1a)+self.conv_v(x2+f1a))
-        return self.fuse(torch.cat([f1,f2],1))+torch.sigmoid(self.alpha)*x
+    def forward(self, x):
+        x1, x2 = torch.split(x, [self.c1, self.c2], 1)
+        f1 = self.norm(self.conv_d(x1))
+        f1a = self.spa(self.align(f1))
+        f2 = self.conv_f2(self.conv_h(x2 + f1a) + self.conv_v(x2 + f1a))
+        return self.fuse(torch.cat([f1, f2], 1)) + torch.sigmoid(self.alpha) * x
+
+
 # class OpticalConvBlock(nn.Module):
 #     def __init__(self,c):
 #         super().__init__()
@@ -251,32 +263,34 @@ class OpticalConvBlock(nn.Module):# 2,143,072 parameters
 #         # return torch.cat((f1,f2,f3,f4),1)
 #         return y+torch.sigmoid(self.alpha)*x
 
-class OpticalDownBlock(nn.Module):
 
-    def __init__(self,c1,c2):
+class OpticalDownBlock(nn.Module):
+    def __init__(self, c1, c2):
         super().__init__()
 
-        self.down=Conv(c1,c2,3,2)
+        self.down = Conv(c1, c2, 3, 2)
 
-        c=c2//2
+        c = c2 // 2
 
-        self.opt=OpticalBlock(c)
-        self.dir_h=Conv(c,c,(1,5))
-        self.dir_v=Conv(c,c,(5,1))
+        self.opt = OpticalBlock(c)
+        self.dir_h = Conv(c, c, (1, 5))
+        self.dir_v = Conv(c, c, (5, 1))
 
-        self.fuse=Conv(c2,c2,1,1)
+        self.fuse = Conv(c2, c2, 1, 1)
 
-    def forward(self,x):
+    def forward(self, x):
 
-        x=self.down(x)
+        x = self.down(x)
 
-        f1,f2=torch.chunk(x,2,1)
+        f1, f2 = torch.chunk(x, 2, 1)
 
-        f1=self.opt(f1)
+        f1 = self.opt(f1)
 
-        f2=self.dir_h(f2)+self.dir_v(f2)
+        f2 = self.dir_h(f2) + self.dir_v(f2)
 
-        return self.fuse(torch.cat([f1,f2],1))
+        return self.fuse(torch.cat([f1, f2], 1))
+
+
 # class OpticalConvBlock(nn.Module): #  parameters
 #     def __init__(self,c,ratio=0.5):
 #         super().__init__()
@@ -332,51 +346,49 @@ class OpticalDownBlock(nn.Module):
 
 #         return out+torch.sigmoid(self.alpha)*x
 
+
 class OpticalConvBlockDown(nn.Module):
-    def __init__(self,c1,c2,k=3,s=2,ratio=0.5):
+    def __init__(self, c1, c2, k=3, s=2, ratio=0.5):
         super().__init__()
 
-        ca=int(c1*ratio)
-        cb=c1-ca
-        self.ca=ca
+        ca = int(c1 * ratio)
+        cb = c1 - ca
+        self.ca = ca
 
-        self.conv_d=OpticalBlock(ca)
-        self.align=Conv(ca,cb,1,1)
+        self.conv_d = OpticalBlock(ca)
+        self.align = Conv(ca, cb, 1, 1)
 
-        self.conv_h=Conv(cb,cb,(1,5),1)
-        self.conv_v=Conv(cb,cb,(5,1),1)
+        self.conv_h = Conv(cb, cb, (1, 5), 1)
+        self.conv_v = Conv(cb, cb, (5, 1), 1)
 
-        self.fuse=Conv(c1//2,c2,k,s)
+        self.fuse = Conv(c1 // 2, c2, k, s)
 
-    def forward(self,x):
-        x1,x2=torch.split(
-            x,[self.ca,x.shape[1]-self.ca],1
-        )
+    def forward(self, x):
+        x1, x2 = torch.split(x, [self.ca, x.shape[1] - self.ca], 1)
 
-        f1=self.conv_d(x1)
+        f1 = self.conv_d(x1)
 
-        f2=self.conv_h(
-            x2+self.align(f1)
-        )+self.conv_v(
-            x2+self.align(f1)
-        )
+        f2 = self.conv_h(x2 + self.align(f1)) + self.conv_v(x2 + self.align(f1))
 
-        return self.fuse(
-            f1+f2
-        )
+        return self.fuse(f1 + f2)
+
+
 class SemanticContextBlock(nn.Module):
-    def __init__(self,c):
+    def __init__(self, c):
         super().__init__()
-        c1=c//2; c2=c-c1
-        self.attn=AAttn(c1,num_heads=8,area=1)
-        self.context=Conv(c2,c2,3,1,d=3)
-        self.fuse=Conv(c,c,1,1)
-        self.alpha=nn.Parameter(torch.tensor(0.0))
+        c1 = c // 2
+        c2 = c - c1
+        self.attn = AAttn(c1, num_heads=8, area=1)
+        self.context = Conv(c2, c2, 3, 1, d=3)
+        self.fuse = Conv(c, c, 1, 1)
+        self.alpha = nn.Parameter(torch.tensor(0.0))
 
-    def forward(self,x):
-        x1,x2=torch.chunk(x,2,1)
-        f1=self.attn(x1); f2=self.context(x2)
-        return self.fuse(torch.cat([f1,f2],1))+torch.sigmoid(self.alpha)*x
+    def forward(self, x):
+        x1, x2 = torch.chunk(x, 2, 1)
+        f1 = self.attn(x1)
+        f2 = self.context(x2)
+        return self.fuse(torch.cat([f1, f2], 1)) + torch.sigmoid(self.alpha) * x
+
 
 # class OpticalConvBlock(nn.Module): # 方向卷积分支
 #     def __init__(self,c,ratio=0.5):
@@ -462,9 +474,9 @@ class SemanticContextBlock(nn.Module):
 
 #         return y + torch.sigmoid(self.alpha)*x
 
+
 class GreyRelationalAttention(nn.Module):
-    """
-    Differentiable grey relational channel-spatial attention.
+    """Differentiable grey relational channel-spatial attention.
 
     rho:
         Distinguishing coefficient of grey relational analysis.
@@ -532,10 +544,7 @@ class GreyRelationalAttention(nn.Module):
         mean_reference = feature.mean(dim=1, keepdim=True)
         max_reference = feature.amax(dim=1, keepdim=True)
 
-        reference = (
-            (1.0 - mix) * mean_reference
-            + mix * max_reference
-        )
+        reference = (1.0 - mix) * mean_reference + mix * max_reference
 
         # Absolute difference sequence
         delta = torch.abs(feature - reference)
@@ -552,11 +561,7 @@ class GreyRelationalAttention(nn.Module):
         ).detach()
 
         # Grey relational coefficient
-        coefficient = (
-            delta_min + self.rho * delta_max
-        ) / (
-            delta + self.rho * delta_max + self.eps
-        )
+        coefficient = (delta_min + self.rho * delta_max) / (delta + self.rho * delta_max + self.eps)
 
         # Grey relational grade
         channel_grade = coefficient.mean(
@@ -585,13 +590,9 @@ class GreyRelationalAttention(nn.Module):
         channel_scale = F.softplus(self.channel_scale)
         spatial_scale = F.softplus(self.spatial_scale)
 
-        channel_weight = torch.sigmoid(
-            channel_scale * channel_grade
-        )
+        channel_weight = torch.sigmoid(channel_scale * channel_grade)
 
-        spatial_weight = torch.sigmoid(
-            spatial_scale * spatial_grade
-        )
+        spatial_weight = torch.sigmoid(spatial_scale * spatial_grade)
 
         spatial_weight = F.interpolate(
             spatial_weight,
@@ -601,11 +602,7 @@ class GreyRelationalAttention(nn.Module):
         )
 
         # Center the modulation around zero
-        modulation = (
-            channel_weight - 0.5
-        ) + (
-            spatial_weight - 0.5
-        )
+        modulation = (channel_weight - 0.5) + (spatial_weight - 0.5)
 
         modulation = modulation.to(dtype=input_dtype)
 
@@ -616,16 +613,14 @@ class GreyRelationalAttention(nn.Module):
         return x * (1.0 + gamma * modulation)
 
 
-
 class MHC_TransformerBlock(nn.Module):
-
     def __init__(self, c1: int, c2: int, num_heads: int):
         super().__init__()
         self.conv = None
         if c1 != c2:
             self.conv = Conv(c1, c2)
         self.linear = nn.Linear(c2, c2)  # learnable position embedding
-        self.tr = MHCTransformerBlock(c2,num_heads)
+        self.tr = MHCTransformerBlock(c2, num_heads)
         self.c2 = c2
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -638,15 +633,16 @@ class MHC_TransformerBlock(nn.Module):
 
 class h_sigmoid(nn.Module):
     def __init__(self, inplace=True):
-        super(h_sigmoid, self).__init__()
+        super().__init__()
         self.relu = nn.ReLU6(inplace=inplace)
 
     def forward(self, x):
         return self.relu(x + 3) / 6
 
+
 class h_swish(nn.Module):
     def __init__(self, inplace=True):
-        super(h_swish, self).__init__()
+        super().__init__()
         self.sigmoid = h_sigmoid(inplace=inplace)
 
     def forward(self, x):
@@ -667,9 +663,10 @@ class h_swish(nn.Module):
 #         y = self.cv2(self.mhc(self.opt(self.cv1(x))))
 #         return x + y if self.add else y
 
+
 class CoordAtt(nn.Module):
     def __init__(self, inp, oup, reduction=32):
-        super(CoordAtt, self).__init__()
+        super().__init__()
         self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
         self.pool_w = nn.AdaptiveAvgPool2d((1, None))
 
@@ -682,11 +679,10 @@ class CoordAtt(nn.Module):
         self.conv_h = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
         self.conv_w = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
 
-
     def forward(self, x):
         identity = x
 
-        n,c,h,w = x.size()
+        _n, _c, h, w = x.size()
         x_h = self.pool_h(x)
         x_w = self.pool_w(x).permute(0, 1, 3, 2)
 
@@ -705,6 +701,7 @@ class CoordAtt(nn.Module):
 
         return out
 
+
 # class Edge(nn.Module):
 #     def __init__(self, ch1, ch2, k=3, s=1):
 #         super().__init__()
@@ -715,15 +712,16 @@ class CoordAtt(nn.Module):
 #     def forward(self, x):
 #         return self.cv(self.mp(x) - self.ap(x))
 
+
 class Edge(nn.Module):
     def __init__(self, c1, c2, k1, s1, k2, s2):
-        super(Edge, self).__init__()
+        super().__init__()
 
         self.mp = nn.MaxPool2d(k1, s1)
         self.cv1 = Conv(c1, c2, k2, s2)
 
     def forward(self, x):
-        return  self.cv1(self.mp(x))
+        return self.cv1(self.mp(x))
 
 
 class EdgeDown(nn.Module):
@@ -736,24 +734,25 @@ class EdgeDown(nn.Module):
     def forward(self, x):
         return self.cv(self.mp(x) - self.ap(x))
 
+
 class ChannelAttention(nn.Module):
     def __init__(self, in_planes, ratio=1):
-        super(ChannelAttention, self).__init__()
+        super().__init__()
         self.in_planes = in_planes
         self.ratio = ratio
-        activation = 'relu'
+        activation = "relu"
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
 
         self.fc1 = nn.Conv2d(in_planes, in_planes // self.ratio, 1, bias=False)
 
-        if (activation == 'leakyrelu'):
+        if activation == "leakyrelu":
             self.activation = nn.LeakyReLU(negative_slope=0.2, inplace=True)
-        elif (activation == 'gelu'):
+        elif activation == "gelu":
             self.activation = nn.GELU()
-        elif (activation == 'relu6'):
+        elif activation == "relu6":
             self.activation = nn.ReLU6(inplace=True)
-        elif (activation == 'hardswish'):
+        elif activation == "hardswish":
             self.activation = nn.Hardswish(inplace=True)
         else:
             self.activation = nn.ReLU(inplace=True)
@@ -770,13 +769,14 @@ class ChannelAttention(nn.Module):
 
         max_out = self.fc2(self.activation(self.fc1(max_pool_out)))
         out = avg_out + max_out
-        return x*self.sigmoid(out)
+        return x * self.sigmoid(out)
+
 
 class SPA(nn.Module):
     def __init__(self, kernel_size=7):
-        super(SPA, self).__init__()
+        super().__init__()
 
-        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        assert kernel_size in (3, 7), "kernel size must be 3 or 7"
         padding = 3 if kernel_size == 7 else 1
 
         self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
@@ -787,7 +787,8 @@ class SPA(nn.Module):
         max_out, _ = torch.max(x, dim=1, keepdim=True)
         out1 = torch.cat([avg_out, max_out], dim=1)
         out1 = self.conv1(out1)
-        return x*self.sigmoid(out1)
+        return x * self.sigmoid(out1)
+
 
 class SingleConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, pad=1, dilation=1, match=True):
@@ -798,21 +799,31 @@ class SingleConv(nn.Module):
         else:
             group = 1
         self.single_conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, groups=group, kernel_size=kernel_size, padding=pad, dilation=dilation, bias=False),
+            nn.Conv2d(
+                in_channels,
+                out_channels,
+                groups=group,
+                kernel_size=kernel_size,
+                padding=pad,
+                dilation=dilation,
+                bias=False,
+            ),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
+
     def forward(self, x):
         return self.single_conv(x)
 
+
 class ChannelShuffle(nn.Module):
     def __init__(self, groups):
-        super(ChannelShuffle, self).__init__()
+        super().__init__()
         self.groups = groups
 
     def forward(self, x):
         batch_size, num_channels, height, width = x.size()
-        assert num_channels % self.groups == 0, 'The number of channels must be divisible by the number of groups'
+        assert num_channels % self.groups == 0, "The number of channels must be divisible by the number of groups"
 
         channels_per_group = num_channels // self.groups
 
@@ -827,46 +838,36 @@ class ChannelShuffle(nn.Module):
 
         return x
 
+
 class EnSimBlock(nn.Module):
-    """
-    EnSim Block
+    r"""EnSim Block.
 
     Structure:
         Input
           |
         Split
         /   \
-      DWConv DWConv
+    DWConv DWConv
         |      |
-       Add    Add
+    Add Add
         |      |
-      CBAM   CBAM
-        \      /
+    CBAM CBAM
+        \\      /
          Concat
            |
-     Channel Shuffle
+    Channel Shuffle
            |
-      Downsample (optional)
+    Downsample (optional)
 
     Returns:
-        out      : main feature
-        shortcut : shortcut feature for decoder
+        out: main feature
+        shortcut: shortcut feature for decoder
     """
 
-    def __init__(
-        self,
-        channels,
-        kernel_size=3,
-        dilation=2,
-        ratio=2,
-        pad=2,
-        down=True,
-        shuffle=True
-    ):
+    def __init__(self, channels, kernel_size=3, dilation=2, ratio=2, pad=2, down=True, shuffle=True):
         super().__init__()
 
-        assert channels % 2 == 0, \
-            "channels must be divisible by 2"
+        assert channels % 2 == 0, "channels must be divisible by 2"
 
         half_channels = channels // 2
 
@@ -882,7 +883,7 @@ class EnSimBlock(nn.Module):
             kernel_size=kernel_size,
             pad=pad,
             dilation=dilation,
-            match=True
+            match=True,
         )
 
         self.conv2 = SingleConv(
@@ -891,48 +892,33 @@ class EnSimBlock(nn.Module):
             kernel_size=kernel_size,
             pad=pad,
             dilation=dilation,
-            match=True
+            match=True,
         )
 
         # -------------------------
         # CBAM for branch 1
         # -------------------------
-        self.ca1 = ChannelAttention(
-            half_channels,
-            ratio=ratio
-        )
+        self.ca1 = ChannelAttention(half_channels, ratio=ratio)
 
-        self.sa1 = SPA(
-            kernel_size=7
-        )
+        self.sa1 = SPA(kernel_size=7)
 
         # -------------------------
         # CBAM for branch 2
         # -------------------------
-        self.ca2 = ChannelAttention(
-            half_channels,
-            ratio=ratio
-        )
+        self.ca2 = ChannelAttention(half_channels, ratio=ratio)
 
-        self.sa2 = SPA(
-            kernel_size=7
-        )
+        self.sa2 = SPA(kernel_size=7)
 
         # -------------------------
         # Channel Shuffle
         # -------------------------
-        self.channel_shuffle = ChannelShuffle(
-            groups=2
-        )
+        self.channel_shuffle = ChannelShuffle(groups=2)
 
         # -------------------------
         # 2x Downsampling
         # -------------------------
         if self.down:
-            self.pool = nn.MaxPool2d(
-                kernel_size=2,
-                stride=2
-            )
+            self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
 
@@ -940,11 +926,7 @@ class EnSimBlock(nn.Module):
         # 1. Channel Split
         # C -> C/2 + C/2
         # =====================================
-        x1, x2 = torch.chunk(
-            x,
-            chunks=2,
-            dim=1
-        )
+        x1, x2 = torch.chunk(x, chunks=2, dim=1)
 
         # preserve residual
         res1 = x1
@@ -966,27 +948,19 @@ class EnSimBlock(nn.Module):
         # 4. CBAM
         # Channel Attention + Spatial Attention
         # =====================================
-        y1 = self.sa1(
-            self.ca1(y1)
-        )
+        y1 = self.sa1(self.ca1(y1))
 
-        y2 = self.sa2(
-            self.ca2(y2)
-        )
+        y2 = self.sa2(self.ca2(y2))
 
         # =====================================
         # 5. Shortcut feature
         # used by decoder
         # =====================================
-        shortcut = y2
 
         # =====================================
         # 6. Channel Concatenation
         # =====================================
-        out = torch.cat(
-            [y1, y2],
-            dim=1
-        )
+        out = torch.cat([y1, y2], dim=1)
 
         # =====================================
         # 7. Channel Shuffle
@@ -1002,18 +976,21 @@ class EnSimBlock(nn.Module):
 
         return out
 
+
 class SimStem(nn.Module):
     def __init__(self, channels, channels1, kernel_size=3, dilation=2, ratio=2):
-        super(SimStem, self).__init__()
-        pad = dilation*(kernel_size-1) // 2
+        super().__init__()
+        pad = dilation * (kernel_size - 1) // 2
         self.input_layer = nn.Sequential(
-                    nn.Conv2d(3, channels, kernel_size, padding=pad, dilation=dilation),
-                    nn.ReLU(inplace=True),
-                    nn.BatchNorm2d(channels))
+            nn.Conv2d(3, channels, kernel_size, padding=pad, dilation=dilation),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(channels),
+        )
         self.depthwise = nn.Sequential(
-                    nn.Conv2d(channels, channels, kernel_size, dilation=dilation, groups=channels, padding=pad),
-                    nn.ReLU(inplace=True),
-                    nn.BatchNorm2d(channels))
+            nn.Conv2d(channels, channels, kernel_size, dilation=dilation, groups=channels, padding=pad),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(channels),
+        )
         self.cam = ChannelAttention(channels, ratio=ratio)
         self.sam = SPA()
 
@@ -1021,6 +998,7 @@ class SimStem(nn.Module):
         #             nn.Conv2d(channels, channels, kernel_size=1),
         #             nn.ReLU(inplace=True),
         #             nn.BatchNorm2d(channels))
+
     def forward(self, x):
         x = self.input_layer(x)
         residual = x
@@ -1029,6 +1007,7 @@ class SimStem(nn.Module):
         # x = self.pointwise(x)
         x = self.sam(self.cam(x))
         return x
+
 
 class DFL(nn.Module):
     """Integral module of Distribution Focal Loss (DFL).
@@ -2041,27 +2020,28 @@ class C3f(nn.Module):
         y.extend(m(y[-1]) for m in self.m)
         return self.cv3(torch.cat(y, 1))
 
+
 class OCMT(nn.Module):
-    def __init__(self,c):
+    def __init__(self, c):
         super().__init__()
-        self.opt=OpticalConvBlock(c)
+        self.opt = OpticalConvBlock(c)
         # self.mhc=MHC_TransformerBlock(c,c,max(1,c//32))
-    def forward(self,x):
-        return (self.opt(x))
+
+    def forward(self, x):
+        return self.opt(x)
 
 
 class OMHT(C2f):
-    def __init__(self,c1,c2,n=1,shortcut=True,e=0.5,g=1):
-        super().__init__(c1,c2,n,shortcut,g,e)
-        self.m=nn.ModuleList(OCMT(self.c) for _ in range(n))
+    def __init__(self, c1, c2, n=1, shortcut=True, e=0.5, g=1):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(OCMT(self.c) for _ in range(n))
+
 
 class SCB(C2f):
-    def __init__(self,c1,c2,n=1,shortcut=True,e=0.5,g=1):
-        super().__init__(c1,c2,n,shortcut,g,e)
-        self.m=nn.ModuleList(
-            SemanticContextBlock(self.c)
-            for _ in range(n)
-        )
+    def __init__(self, c1, c2, n=1, shortcut=True, e=0.5, g=1):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(SemanticContextBlock(self.c) for _ in range(n))
+
 
 # class C3k2(C2f):
 #     """Faster Implementation of CSP Bottleneck with 2 convolutions."""
@@ -2105,6 +2085,7 @@ class SCB(C2f):
 #                 OpticalConvBlock(self.c),
 #                 MHC_TransformerBlock(self.c, self.c, self.c//32)
 
+
 #             )
 #             for _ in range(n)
 #         )
@@ -2147,6 +2128,7 @@ class C3k2(C2f):
             else Bottleneck(self.c, self.c, shortcut, g)
             for _ in range(n)
         )
+
 
 class C3k(C3):
     """C3k is a CSP bottleneck module with customizable kernel sizes for feature extraction in neural networks."""
@@ -2920,10 +2902,9 @@ class A2C2f(nn.Module):
             return x + self.gamma.view(-1, self.gamma.shape[0], 1, 1) * y
         return y
 
+
 class GRA2C2f(A2C2f):
-    """
-    A2C2f with grey relational feature recalibration.
-    """
+    """A2C2f with grey relational feature recalibration."""
 
     def __init__(
         self,
@@ -2961,6 +2942,7 @@ class GRA2C2f(A2C2f):
     def forward(self, x):
         x = super().forward(x)
         return self.gra(x)
+
 
 class SwiGLUFFN(nn.Module):
     """SwiGLU Feed-Forward Network for transformer-based architectures."""
