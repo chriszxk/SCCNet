@@ -15,3 +15,11 @@ The main package versions used in our environment are listed below.
 | einops | 0.8.2 |
 | PyWavelets | 1.8.0 |
 | grad-cam | 1.5.7 |
+
+## Training
+
+To start training, run the following command:
+
+```bash
+python train.py
+```
