@@ -2,13 +2,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+
 from ultralytics import YOLO
 
-
-model = YOLO(
-    "/mnt/DATA/quabot/work/github/HSCD/model-weight/"
-    "SCCNet/train/weights/best.pt"
-)
+model = YOLO("/mnt/DATA/quabot/work/github/HSCD/model-weight/SCCNet/train/weights/best.pt")
 
 source = "/mnt/DATA/quabot/work/HRSC/images/val"
 output_dir = Path("./runs/segment/blue_green_conf")
@@ -54,9 +51,7 @@ for result in results:
         classes = result.boxes.cls.cpu().numpy().astype(int)
         confidences = result.boxes.conf.cpu().numpy()
 
-        for mask, class_id, confidence in zip(
-            masks, classes, confidences
-        ):
+        for mask, class_id, confidence in zip(masks, classes, confidences):
             color = colors.get(int(class_id), (0, 255, 255))
 
             if mask.shape != (height, width):
@@ -73,8 +68,7 @@ for result in results:
             foreground = binary_mask.astype(bool)
 
             image[foreground] = (
-                image[foreground].astype(np.float32) * (1 - alpha)
-                + np.array(color, dtype=np.float32) * alpha
+                image[foreground].astype(np.float32) * (1 - alpha) + np.array(color, dtype=np.float32) * alpha
             ).astype(np.uint8)
 
             contours, _ = cv2.findContours(
@@ -84,9 +78,7 @@ for result in results:
             )
 
             if contours:
-                annotations.append(
-                    (contours, color, float(confidence))
-                )
+                annotations.append((contours, color, float(confidence)))
 
         # 先画所有轮廓。
         for contours, color, _ in annotations:

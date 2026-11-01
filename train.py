@@ -1,5 +1,4 @@
 from ultralytics import YOLO
-import torch
 
 model = YOLO("/mnt/DATA/quabot/work/github/HSCD/ultralytics/cfg/models/SCCNet_files/SCCNet.yaml")
 train_results = model.train(

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 import torch
+from ultralytics.cfg import TASK2DATA, TASK2MODEL, TASKS
 
 from tests import CUDA_DEVICE_COUNT, CUDA_IS_AVAILABLE, MODEL, SOURCE
 from ultralytics import YOLO
-from ultralytics.cfg import TASK2DATA, TASK2MODEL, TASKS
 from ultralytics.utils import ASSETS, IS_JETSON, WEIGHTS_DIR
 from ultralytics.utils.autodevice import GPUInfo
 from ultralytics.utils.checks import check_amp, check_tensorrt
@@ -122,6 +122,7 @@ def test_export_engine_matrix(task, dynamic, quantize, batch):
 def test_semantic_loss_all_ignore_amp(nc):
     """All-ignore guard must stay finite with large fp16 logits, where sum() overflows to inf (AMP is a GPU path)."""
     from ultralytics.cfg import get_cfg
+
     from ultralytics.nn.tasks import SemanticSegmentationModel
     from ultralytics.utils.loss import SemanticSegmentationLoss
 

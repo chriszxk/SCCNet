@@ -16,11 +16,11 @@ if sys.platform == "win32":
 
 import pytest
 import torch
+from ultralytics.cfg import TASK2DATA, TASK2MODEL, TASKS, _handle_deprecation, get_cfg
 
 from tests import MODEL, SOURCE
 from tests.conftest import isolated_model_path
 from ultralytics import YOLO
-from ultralytics.cfg import TASK2DATA, TASK2MODEL, TASKS, _handle_deprecation, get_cfg
 from ultralytics.engine.exporter import EXPORT_ENVS, Exporter, export_formats, validate_args
 from ultralytics.utils import (
     ARM64,

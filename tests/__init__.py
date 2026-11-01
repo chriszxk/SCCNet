@@ -1,6 +1,7 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
 from ultralytics.cfg import TASK2DATA, TASK2MODEL, TASKS
+
 from ultralytics.utils import ASSETS, WEIGHTS_DIR, checks
 
 # Shared test constants for model, config, data source, and environment info
