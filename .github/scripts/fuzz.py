@@ -247,6 +247,7 @@ def load_universe():
         TASK2MODEL,
         TASKS,
     )
+
     from ultralytics.utils import ASSETS, DEFAULT_CFG_DICT, LOGGER
 
     return {

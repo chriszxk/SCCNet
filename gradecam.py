@@ -1,5 +1,5 @@
-import os
 import inspect
+import os
 import traceback
 
 import cv2
@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
+
 from ultralytics import YOLO
 
 try:
@@ -15,20 +16,20 @@ except ImportError:
     from ultralytics.utils.ops import non_max_suppression
 
 from pytorch_grad_cam import (
-    GradCAMPlusPlus,
-    GradCAM,
-    XGradCAM,
     EigenCAM,
+    EigenGradCAM,
+    GradCAM,
+    GradCAMPlusPlus,
     HiResCAM,
     LayerCAM,
     RandomCAM,
-    EigenGradCAM,
+    XGradCAM,
 )
 from pytorch_grad_cam.utils.image import show_cam_on_image
 
 
 def letterbox(image, new_shape=640, stride=32):
-    """等比例缩放，并填充至 stride 的整数倍。"""
+    """等比例缩放，并填充至 stride 的整数倍。."""
     height, width = image.shape[:2]
 
     if isinstance(new_shape, int):
@@ -39,8 +40,8 @@ def letterbox(image, new_shape=640, stride=32):
         new_shape[1] / width,
     )
 
-    resized_width = int(round(width * ratio))
-    resized_height = int(round(height * ratio))
+    resized_width = round(width * ratio)
+    resized_height = round(height * ratio)
 
     dw = (new_shape[1] - resized_width) % stride
     dh = (new_shape[0] - resized_height) % stride
@@ -52,10 +53,10 @@ def letterbox(image, new_shape=640, stride=32):
             interpolation=cv2.INTER_LINEAR,
         )
 
-    left = int(round(dw / 2 - 0.1))
-    right = int(round(dw / 2 + 0.1))
-    top = int(round(dh / 2 - 0.1))
-    bottom = int(round(dh / 2 + 0.1))
+    left = round(dw / 2 - 0.1)
+    right = round(dw / 2 + 0.1)
+    top = round(dh / 2 - 0.1)
+    bottom = round(dh / 2 + 0.1)
 
     return cv2.copyMakeBorder(
         image,
@@ -69,7 +70,7 @@ def letterbox(image, new_shape=640, stride=32):
 
 
 def print_output_structure(output, name="output", depth=0):
-    """只打印类型、形状和梯度状态，不打印张量内容。"""
+    """只打印类型、形状和梯度状态，不打印张量内容。."""
     indent = "  " * depth
 
     if isinstance(output, torch.Tensor):
@@ -91,10 +92,7 @@ def print_output_structure(output, name="output", depth=0):
             )
 
     elif isinstance(output, (tuple, list)):
-        print(
-            f"{indent}{name}: "
-            f"{type(output).__name__}, len={len(output)}"
-        )
+        print(f"{indent}{name}: {type(output).__name__}, len={len(output)}")
         for index, value in enumerate(output):
             print_output_structure(
                 value,
@@ -107,28 +105,17 @@ def print_output_structure(output, name="output", depth=0):
 
 
 def extract_predictions(model_output, nc):
-    """
-    当前 Segment 输出：
-    (
-        (predictions, proto),
-        auxiliary_dict
-    )
+    """当前 Segment 输出： ( (predictions, proto), auxiliary_dict ).
 
-    predictions: [B, 4 + nc + nm, N]
-    返回检测部分：[B, 4 + nc, N]
+    predictions: [B, 4 + nc + nm, N] 返回检测部分：[B, 4 + nc, N]
     """
     if not isinstance(model_output, (tuple, list)):
-        raise TypeError(
-            f"预期外层输出为 tuple/list，实际为 "
-            f"{type(model_output).__name__}"
-        )
+        raise TypeError(f"预期外层输出为 tuple/list，实际为 {type(model_output).__name__}")
 
     inference_output = model_output[0]
 
     if not isinstance(inference_output, (tuple, list)):
-        raise TypeError(
-            "预期 model_output[0] 为 (predictions, proto)。"
-        )
+        raise TypeError("预期 model_output[0] 为 (predictions, proto)。")
 
     predictions = inference_output[0]
 
@@ -136,19 +123,14 @@ def extract_predictions(model_output, nc):
         raise TypeError("model_output[0][0] 不是 Tensor。")
 
     if predictions.ndim != 3:
-        raise ValueError(
-            f"预测张量应为三维，实际为 {tuple(predictions.shape)}"
-        )
+        raise ValueError(f"预测张量应为三维，实际为 {tuple(predictions.shape)}")
 
     if predictions.shape[1] < 4 + nc:
-        raise ValueError(
-            f"预测通道不足：{predictions.shape[1]}，"
-            f"至少需要 {4 + nc}。"
-        )
+        raise ValueError(f"预测通道不足：{predictions.shape[1]}，至少需要 {4 + nc}。")
 
     # 仅取框坐标和类别分数，排除掩码系数。
     # 不使用 detach，保留 CAM 所需的梯度链路。
-    return predictions[:, :4 + nc, :]
+    return predictions[:, : 4 + nc, :]
 
 
 class ActivationsAndGradients:
@@ -160,28 +142,15 @@ class ActivationsAndGradients:
         self.handles = []
 
         for target_layer in target_layers:
-            self.handles.append(
-                target_layer.register_forward_hook(
-                    self.save_activation
-                )
-            )
-            self.handles.append(
-                target_layer.register_forward_hook(
-                    self.save_gradient
-                )
-            )
+            self.handles.append(target_layer.register_forward_hook(self.save_activation))
+            self.handles.append(target_layer.register_forward_hook(self.save_gradient))
 
     def save_activation(self, module, inputs, output):
         if not isinstance(output, torch.Tensor):
-            raise TypeError(
-                "目标层输出不是 Tensor，请选择输出为 "
-                "[B, C, H, W] 的特征层。"
-            )
+            raise TypeError("目标层输出不是 Tensor，请选择输出为 [B, C, H, W] 的特征层。")
 
         if output.ndim != 4:
-            raise ValueError(
-                f"目标层输出不是四维特征图：{tuple(output.shape)}"
-            )
+            raise ValueError(f"目标层输出不是四维特征图：{tuple(output.shape)}")
 
         self.activations.append(output.detach().cpu())
 
@@ -206,11 +175,9 @@ class ActivationsAndGradients:
         )
 
         boxes = predictions[0, :4].transpose(0, 1)
-        scores = predictions[0, 4:4 + self.nc].transpose(0, 1)
+        scores = predictions[0, 4 : 4 + self.nc].transpose(0, 1)
 
-        indices = scores.max(dim=1).values.argsort(
-            descending=True
-        )
+        indices = scores.max(dim=1).values.argsort(descending=True)
 
         return [[scores[indices], boxes[indices]]]
 
@@ -228,9 +195,7 @@ class YOLOTarget(torch.nn.Module):
         super().__init__()
 
         if output_type not in {"class", "box", "all"}:
-            raise ValueError(
-                "backward_type 必须为 class、box 或 all。"
-            )
+            raise ValueError("backward_type 必须为 class、box 或 all。")
 
         if not 0 < ratio <= 1:
             raise ValueError("ratio 必须在 (0, 1] 范围内。")
@@ -252,9 +217,7 @@ class YOLOTarget(torch.nn.Module):
         valid = confidence >= self.conf
 
         if not valid.any().item():
-            raise RuntimeError(
-                f"没有置信度达到 {self.conf} 的目标。"
-            )
+            raise RuntimeError(f"没有置信度达到 {self.conf} 的目标。")
 
         target = confidence.sum() * 0.0
 
@@ -337,10 +300,7 @@ class YOLOHeatmap:
             ratio=ratio,
         )
 
-        target_layers = [
-            self.model.model[index]
-            for index in self.layer_indices
-        ]
+        target_layers = [self.model.model[index] for index in self.layer_indices]
 
         cam_class = methods[method]
         kwargs = {
@@ -348,9 +308,7 @@ class YOLOHeatmap:
             "target_layers": target_layers,
         }
 
-        if "use_cuda" in inspect.signature(
-            cam_class.__init__
-        ).parameters:
+        if "use_cuda" in inspect.signature(cam_class.__init__).parameters:
             kwargs["use_cuda"] = self.device.type == "cuda"
 
         self.method = cam_class(**kwargs)
@@ -380,9 +338,7 @@ class YOLOHeatmap:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image_float = image.astype(np.float32) / 255.0
 
-        tensor = torch.from_numpy(
-            np.ascontiguousarray(image_float.transpose(2, 0, 1))
-        ).unsqueeze(0).to(self.device)
+        tensor = torch.from_numpy(np.ascontiguousarray(image_float.transpose(2, 0, 1))).unsqueeze(0).to(self.device)
 
         return image_float, tensor
 
@@ -397,9 +353,7 @@ class YOLOHeatmap:
 
         for attribute in ("nc", "nm", "end2end", "export"):
             if hasattr(head, attribute):
-                print(
-                    f"head.{attribute} = {getattr(head, attribute)}"
-                )
+                print(f"head.{attribute} = {getattr(head, attribute)}")
 
         _, tensor = self.load_image(image_path)
         print(f"输入形状：{tuple(tensor.shape)}")
@@ -413,16 +367,13 @@ class YOLOHeatmap:
                     output,
                     name=f"model.model[{index}]",
                 )
+
             return hook
 
         try:
             print("\n========== 目标层输出结构 ==========")
             for index in self.layer_indices:
-                handles.append(
-                    self.model.model[index].register_forward_hook(
-                        make_hook(index)
-                    )
-                )
+                handles.append(self.model.model[index].register_forward_hook(make_hook(index)))
 
             with torch.enable_grad():
                 output = self.model(tensor)
@@ -513,13 +464,8 @@ class YOLOHeatmap:
                 confidence = float(detection[4])
                 class_id = int(detection[5])
 
-                color = tuple(
-                    int(value) for value in self.colors[class_id]
-                )
-                label = (
-                    f"{self.model_names[class_id]} "
-                    f"{confidence:.2f}"
-                )
+                color = tuple(int(value) for value in self.colors[class_id])
+                label = f"{self.model_names[class_id]} {confidence:.2f}"
 
                 cv2.rectangle(
                     cam_image,
@@ -546,8 +492,13 @@ class YOLOHeatmap:
         save_path = os.path.abspath(save_path)
 
         extensions = {
-            ".jpg", ".jpeg", ".png", ".bmp",
-            ".tif", ".tiff", ".webp",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".bmp",
+            ".tif",
+            ".tiff",
+            ".webp",
         }
 
         if os.path.isdir(img_path):
@@ -556,8 +507,7 @@ class YOLOHeatmap:
                 for filename in sorted(os.listdir(img_path))
                 if (
                     os.path.isfile(os.path.join(img_path, filename))
-                    and os.path.splitext(filename)[1].lower()
-                    in extensions
+                    and os.path.splitext(filename)[1].lower() in extensions
                 )
             ]
         elif os.path.isfile(img_path):
@@ -592,9 +542,7 @@ class YOLOHeatmap:
             output_file = os.path.join(save_path, filename)
 
             try:
-                if os.path.realpath(input_file) == os.path.realpath(
-                    output_file
-                ):
+                if os.path.realpath(input_file) == os.path.realpath(output_file):
                     raise ValueError("输出路径与原图相同，拒绝覆盖。")
 
                 self.process(input_file, output_file)
@@ -616,10 +564,7 @@ class YOLOHeatmap:
                     hooks.activations.clear()
                     hooks.gradients.clear()
 
-        print(
-            f"\n完成：成功 {success_count} 张，"
-            f"失败 {len(failures)} 张"
-        )
+        print(f"\n完成：成功 {success_count} 张，失败 {len(failures)} 张")
         print(f"输出目录：{save_path}")
 
     def close(self):
@@ -630,10 +575,7 @@ class YOLOHeatmap:
 def get_params():
     return {
         "weight": (
-            "/mnt/DATA/quabot/work/github/HSCD/"
-            "model-weight/"
-            "SCCNet_files-seg4-1-wvd11-1-omht-scb6/"
-            "train/weights/best.pt"
+            "/mnt/DATA/quabot/work/github/HSCD/model-weight/SCCNet_files-seg4-1-wvd11-1-omht-scb6/train/weights/best.pt"
         ),
         "device": "cuda:0",
         "method": "GradCAMPlusPlus",
@@ -644,7 +586,6 @@ def get_params():
         "show_box": False,
         "renormalize": True,
         "img_size": 640,
-
         # True：打印第一张图片的模型输出结构，然后退出。
         # 完成分割头输出适配后，再改为 False 批量生成热力图。
         "debug_only": False,

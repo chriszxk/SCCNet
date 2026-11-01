@@ -7,12 +7,10 @@ import math
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import nn
 
-import torch.nn.functional as F
-
 __all__ = (
-    "DySnakeConv",
     "CBAM",
     "ChannelAttention",
     "Concat",
@@ -21,6 +19,7 @@ __all__ = (
     "ConvTranspose",
     "DWConv",
     "DWConvTranspose2d",
+    "DySnakeConv",
     "Focus",
     "GhostConv",
     "Index",
@@ -30,15 +29,13 @@ __all__ = (
 )
 
 
-
-
 # ============================================================
 # Dynamic Snake Convolution
 # ============================================================
 
+
 class DSConv(nn.Module):
-    """
-    Dynamic Snake Convolution.
+    """Dynamic Snake Convolution.
 
     morph:
         0 -> snake sampling mainly along x direction
@@ -57,8 +54,7 @@ class DSConv(nn.Module):
         super().__init__()
 
         assert morph in [0, 1]
-        assert kernel_size % 2 == 1, \
-            "kernel_size should be odd."
+        assert kernel_size % 2 == 1, "kernel_size should be odd."
 
         self.in_ch = in_ch
         self.out_ch = out_ch
@@ -84,16 +80,13 @@ class DSConv(nn.Module):
             bias=True,
         )
 
-        self.offset_bn = nn.BatchNorm2d(
-            2 * kernel_size
-        )
+        self.offset_bn = nn.BatchNorm2d(2 * kernel_size)
 
         # ----------------------------------------------------
         # convolution after snake sampling
         # ----------------------------------------------------
 
         if morph == 0:
-
             # sampled feature:
             # B C H (W*K)
 
@@ -107,7 +100,6 @@ class DSConv(nn.Module):
             )
 
         else:
-
             # sampled feature:
             # B C (H*K) W
 
@@ -123,54 +115,36 @@ class DSConv(nn.Module):
         self.bn = nn.BatchNorm2d(out_ch)
         self.act = nn.SiLU(inplace=True)
 
-
     # ========================================================
     # cumulative snake offset
     # ========================================================
 
     def _accumulate_offset(self, offset):
-        """
-        offset:
-            B K H W
+        """offset: B K H W.
 
         Instead of allowing each sampling point to move
         independently, offsets accumulate from the center.
 
         This is the core "snake-like continuity" constraint.
         """
-
-        b, k, h, w = offset.shape
+        _b, k, _h, _w = offset.shape
 
         center = k // 2
 
         values = [None] * k
 
         # center point fixed
-        values[center] = torch.zeros_like(
-            offset[:, center]
-        )
+        values[center] = torch.zeros_like(offset[:, center])
 
         # positive direction
         for i in range(1, center + 1):
-
-            values[center + i] = (
-                values[center + i - 1]
-                + offset[:, center + i]
-            )
+            values[center + i] = values[center + i - 1] + offset[:, center + i]
 
         # negative direction
         for i in range(1, center + 1):
+            values[center - i] = values[center - i + 1] + offset[:, center - i]
 
-            values[center - i] = (
-                values[center - i + 1]
-                + offset[:, center - i]
-            )
-
-        return torch.stack(
-            values,
-            dim=1
-        )
-
+        return torch.stack(values, dim=1)
 
     # ========================================================
     # build sampling grid
@@ -178,7 +152,7 @@ class DSConv(nn.Module):
 
     def _deform_feature(self, x, offset):
 
-        b, c, h, w = x.shape
+        b, _c, h, w = x.shape
 
         k = self.kernel_size
         center = k // 2
@@ -195,64 +169,34 @@ class DSConv(nn.Module):
         # ----------------------------------------------------
 
         if self.if_offset:
-
             if self.morph == 0:
+                offset_y = self._accumulate_offset(offset_y)
 
-                offset_y = self._accumulate_offset(
-                    offset_y
-                )
-
-                offset_y = (
-                    offset_y
-                    * self.extend_scope
-                )
+                offset_y = offset_y * self.extend_scope
 
             else:
+                offset_x = self._accumulate_offset(offset_x)
 
-                offset_x = self._accumulate_offset(
-                    offset_x
-                )
-
-                offset_x = (
-                    offset_x
-                    * self.extend_scope
-                )
+                offset_x = offset_x * self.extend_scope
 
         else:
+            offset_y = torch.zeros_like(offset_y)
 
-            offset_y = torch.zeros_like(
-                offset_y
-            )
-
-            offset_x = torch.zeros_like(
-                offset_x
-            )
+            offset_x = torch.zeros_like(offset_x)
 
         # ----------------------------------------------------
         # original coordinates
         # ----------------------------------------------------
 
         yy, xx = torch.meshgrid(
-            torch.arange(
-                h,
-                device=x.device,
-                dtype=x.dtype
-            ),
-            torch.arange(
-                w,
-                device=x.device,
-                dtype=x.dtype
-            ),
-            indexing="ij"
+            torch.arange(h, device=x.device, dtype=x.dtype),
+            torch.arange(w, device=x.device, dtype=x.dtype),
+            indexing="ij",
         )
 
-        yy = yy.unsqueeze(0).expand(
-            b, -1, -1
-        )
+        yy = yy.unsqueeze(0).expand(b, -1, -1)
 
-        xx = xx.unsqueeze(0).expand(
-            b, -1, -1
-        )
+        xx = xx.unsqueeze(0).expand(b, -1, -1)
 
         grids = []
 
@@ -261,9 +205,7 @@ class DSConv(nn.Module):
         # ====================================================
 
         if self.morph == 0:
-
             for i in range(k):
-
                 # fixed horizontal positions
                 x_pos = xx + (i - center)
 
@@ -273,47 +215,29 @@ class DSConv(nn.Module):
                 # normalize coordinates to [-1, 1]
 
                 if w > 1:
-                    x_norm = (
-                        2.0 * x_pos / (w - 1)
-                        - 1.0
-                    )
+                    x_norm = 2.0 * x_pos / (w - 1) - 1.0
                 else:
-                    x_norm = torch.zeros_like(
-                        x_pos
-                    )
+                    x_norm = torch.zeros_like(x_pos)
 
                 if h > 1:
-                    y_norm = (
-                        2.0 * y_pos / (h - 1)
-                        - 1.0
-                    )
+                    y_norm = 2.0 * y_pos / (h - 1) - 1.0
                 else:
-                    y_norm = torch.zeros_like(
-                        y_pos
-                    )
+                    y_norm = torch.zeros_like(y_pos)
 
-                grid = torch.stack(
-                    [x_norm, y_norm],
-                    dim=-1
-                )
+                grid = torch.stack([x_norm, y_norm], dim=-1)
 
                 grids.append(grid)
 
             # B H (W*K) 2
 
-            grid = torch.cat(
-                grids,
-                dim=2
-            )
+            grid = torch.cat(grids, dim=2)
 
         # ====================================================
         # Vertical snake
         # ====================================================
 
         else:
-
             for i in range(k):
-
                 # fixed vertical positions
                 y_pos = yy + (i - center)
 
@@ -321,38 +245,22 @@ class DSConv(nn.Module):
                 x_pos = xx + offset_x[:, i]
 
                 if w > 1:
-                    x_norm = (
-                        2.0 * x_pos / (w - 1)
-                        - 1.0
-                    )
+                    x_norm = 2.0 * x_pos / (w - 1) - 1.0
                 else:
-                    x_norm = torch.zeros_like(
-                        x_pos
-                    )
+                    x_norm = torch.zeros_like(x_pos)
 
                 if h > 1:
-                    y_norm = (
-                        2.0 * y_pos / (h - 1)
-                        - 1.0
-                    )
+                    y_norm = 2.0 * y_pos / (h - 1) - 1.0
                 else:
-                    y_norm = torch.zeros_like(
-                        y_pos
-                    )
+                    y_norm = torch.zeros_like(y_pos)
 
-                grid = torch.stack(
-                    [x_norm, y_norm],
-                    dim=-1
-                )
+                grid = torch.stack([x_norm, y_norm], dim=-1)
 
                 grids.append(grid)
 
             # B (H*K) W 2
 
-            grid = torch.cat(
-                grids,
-                dim=1
-            )
+            grid = torch.cat(grids, dim=1)
 
         # ----------------------------------------------------
         # deformable sampling
@@ -367,7 +275,6 @@ class DSConv(nn.Module):
         )
 
         return x_deformed
-
 
     # ========================================================
     # forward
@@ -387,10 +294,7 @@ class DSConv(nn.Module):
 
         # deform sampling
 
-        x = self._deform_feature(
-            x,
-            offset
-        )
+        x = self._deform_feature(x, offset)
 
         # snake convolution
 
@@ -407,16 +311,9 @@ class DSConv(nn.Module):
 # Dynamic Snake Convolution fusion block
 # ============================================================
 
-class DySnakeConv(nn.Module):
 
-    """
-                 ┌─ Normal 3x3 Conv ─┐
-    Input ───────┼─ DSConv-X ────────┼─ Concat
-                 └─ DSConv-Y ────────┘
-                                      |
-                                    1x1
-                                      |
-                                    Output
+class DySnakeConv(nn.Module):
+    """┌─ Normal 3x3 Conv ─┐ Input ───────┼─ DSConv-X ────────┼─ Concat └─ DSConv-Y ────────┘ | 1x1 | Output.
     """
 
     def __init__(
@@ -431,12 +328,7 @@ class DySnakeConv(nn.Module):
         # normal convolution branch
         # ----------------------------------------------------
 
-        self.conv_normal = Conv(
-            c1,
-            c2,
-            k=3,
-            s=1
-        )
+        self.conv_normal = Conv(c1, c2, k=3, s=1)
 
         # ----------------------------------------------------
         # horizontal snake branch
@@ -464,13 +356,7 @@ class DySnakeConv(nn.Module):
         # fusion
         # ----------------------------------------------------
 
-        self.fuse = Conv(
-            c2 * 3,
-            c2,
-            k=1,
-            s=1
-        )
-
+        self.fuse = Conv(c2 * 3, c2, k=1, s=1)
 
     def forward(self, x):
 
@@ -480,14 +366,12 @@ class DySnakeConv(nn.Module):
 
         x2 = self.conv_y(x)
 
-        x = torch.cat(
-            [x0, x1, x2],
-            dim=1
-        )
+        x = torch.cat([x0, x1, x2], dim=1)
 
         x = self.fuse(x)
 
         return x
+
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -497,17 +381,15 @@ def autopad(k, p=None, d=1):  # kernel, padding, dilation
         p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
     return p
 
-class LTEFunction(torch.autograd.Function):
 
+class LTEFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, a, b, eps):
-        """
-        y = a * log(clamp(tanh(exp(b*x)), min=eps))
+        """Y = a * log(clamp(tanh(exp(b*x)), min=eps)).
 
         Forward uses in-place operations to reduce memory usage.
         Only x, a, b are saved for backward.
         """
-
         # Only save necessary tensors
         ctx.save_for_backward(x, a, b)
         ctx.eps = eps
@@ -574,17 +456,9 @@ class LTEFunction(torch.autograd.Function):
 
         # exp(z) may overflow for a very large positive z.
         # In this region tanh(exp(z)) == 1 and derivative == 0.
-        dfdz = torch.where(
-            torch.isfinite(dfdz),
-            dfdz,
-            torch.zeros_like(dfdz)
-        )
+        dfdz = torch.where(torch.isfinite(dfdz), dfdz, torch.zeros_like(dfdz))
 
-        dfdz = torch.where(
-            active,
-            dfdz,
-            torch.zeros_like(dfdz)
-        )
+        dfdz = torch.where(active, dfdz, torch.zeros_like(dfdz))
 
         # =================================================
         # gradient w.r.t. x
@@ -612,19 +486,13 @@ class LTEFunction(torch.autograd.Function):
         # dy/db = a * f'(bx) * x
         # =================================================
 
-        grad_b = (
-            grad_output
-            * a
-            * dfdz
-            * x
-        ).sum()
+        grad_b = (grad_output * a * dfdz * x).sum()
 
         return grad_x, grad_a, grad_b, None
 
 
 class LTE(nn.Module):
-    """
-    Low-memory implementation of:
+    """Low-memory implementation of:.
 
         LTE(x) = a * log(tanh(exp(b*x)))
 
@@ -636,46 +504,25 @@ class LTE(nn.Module):
     The mathematical function is unchanged.
     """
 
-    def __init__(
-        self,
-        a=1.0,
-        b=1.0,
-        learnable_a=True,
-        learnable_b=True,
-        eps=1e-6
-    ):
+    def __init__(self, a=1.0, b=1.0, learnable_a=True, learnable_b=True, eps=1e-6):
         super().__init__()
 
         self.eps = eps
 
         if learnable_a:
-            self.a = nn.Parameter(
-                torch.tensor(float(a))
-            )
+            self.a = nn.Parameter(torch.tensor(float(a)))
         else:
-            self.register_buffer(
-                "a",
-                torch.tensor(float(a))
-            )
+            self.register_buffer("a", torch.tensor(float(a)))
 
         if learnable_b:
-            self.b = nn.Parameter(
-                torch.tensor(float(b))
-            )
+            self.b = nn.Parameter(torch.tensor(float(b)))
         else:
-            self.register_buffer(
-                "b",
-                torch.tensor(float(b))
-            )
+            self.register_buffer("b", torch.tensor(float(b)))
 
     def forward(self, x):
 
-        return LTEFunction.apply(
-            x,
-            self.a,
-            self.b,
-            self.eps
-        )
+        return LTEFunction.apply(x, self.a, self.b, self.eps)
+
 
 class Conv(nn.Module):
     """Standard convolution module with batch normalization and activation.

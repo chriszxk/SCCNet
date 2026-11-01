@@ -38,7 +38,9 @@ class ImageEncoderViT(nn.Module):
 
     Examples:
         >>> import torch
-        >>> encoder = ImageEncoderViT(img_size=224, patch_size=16, embed_dim=768, depth=SCCNet_files, num_heads=SCCNet_files)
+        >>> encoder = ImageEncoderViT(
+        ...     img_size=224, patch_size=16, embed_dim=768, depth=SCCNet_files, num_heads=SCCNet_files
+        ... )
         >>> input_image = torch.randn(1, 3, 224, 224)
         >>> output = encoder(input_image)
         >>> print(output.shape)

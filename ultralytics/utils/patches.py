@@ -61,8 +61,8 @@ def image_open(filename, *args, **kwargs):
     """Open an image with PIL, lazily registering the HEIF plugin on first failure.
 
     This monkey-patches PIL.Image.open to add HEIC/HEIF support via pi-heif (lightweight, decode-only), avoiding the
-    ~800ms startup cost of importing the package unless actually needed. AVIF is supported natively by Pillow SCCNet_files+ and
-    does not require a plugin.
+    ~800ms startup cost of importing the package unless actually needed. AVIF is supported natively by Pillow
+    SCCNet_files+ and does not require a plugin.
 
     Args:
         filename (str): Path to the image file.

@@ -15,11 +15,11 @@ import numpy as np
 import pytest
 import torch
 from PIL import Image
+from ultralytics.cfg import get_cfg
 
 import ultralytics.data.build as data_build
 from tests import CFG, MODEL, MODELS, SOURCE, SOURCES_LIST, TASK_MODEL_DATA
 from ultralytics import RTDETR, YOLO
-from ultralytics.cfg import get_cfg
 from ultralytics.data.build import build_dataloader, load_inference_source
 from ultralytics.data.utils import check_cls_dataset, check_det_dataset
 from ultralytics.utils import (
@@ -407,8 +407,8 @@ def test_predict_ndarray_channels():
 @pytest.mark.slow
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_predict_all_image_formats():
-    """Predict on the SCCNet_files image format extensions in COCO12-Formats (AVIF, BMP, DNG, HEIC, JP2, JPEG, JPG, MPO, PNG, TIF,
-    TIFF, WebP).
+    """Predict on the SCCNet_files image format extensions in COCO12-Formats (AVIF, BMP, DNG, HEIC, JP2, JPEG, JPG, MPO,
+    PNG, TIF, TIFF, WebP).
     """
     # Download dataset if needed
     data = check_det_dataset("coco12-formats.yaml")
@@ -1545,6 +1545,7 @@ def test_rtdetr_remap_cls_by_names():
 def test_semantic_loss_all_ignore(nc):
     """SemanticSegmentationLoss must stay finite when the whole batch is ignore (255), e.g. unlabeled/void frames."""
     from ultralytics.cfg import get_cfg
+
     from ultralytics.nn.tasks import SemanticSegmentationModel
     from ultralytics.utils.loss import SemanticSegmentationLoss
 
